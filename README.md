@@ -52,6 +52,12 @@ make clean
 
 `make render` を実行すると研究報告書（Book 形式 HTML）と発表資料（reveal.js HTML・PDF・PPTX）が `docs/` ディレクトリに出力されます。
 
+## 公開URL
+
+```
+https://s24110068.github.io/seminar-research-2026-autumn/
+```
+
 ## 使い方
 
 1. このテンプレートをフォーク／コピーします

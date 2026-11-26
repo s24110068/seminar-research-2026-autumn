@@ -2,182 +2,177 @@
 title: "データ"
 ---
 
-:::{.callout-tip title="書き方ガイド：データ"}
-**何を書くか：** 分析に使用するデータの全体像を示す章です。データの出典・構造・基本統計量・可視化を通じて、読者がデータを十分に理解できるようにします。
-
-**書き方のコツ：**
-
-- **データ概要** では、取得元・期間・サンプル数・変数の一覧を明示します
-- **基本統計量** は表形式で整理し、データの分布を把握できるようにします
-- **可視化** は目的を明確にして（例：「時系列の傾向を確認する」）、図にキャプションと番号を付けます
-- 前処理の手順はフロー図で示すと理解しやすくなります
-
-**Quartoの機能：**
-
-- R コードブロック `` ```{r} `` でデータ処理と可視化を実行できます
-- `#| label: fig-xxx` と `#| fig-cap:` で図番号とキャプションを自動付与します
-- `@fig-xxx` で本文中からクロスリファレンスできます
-- `::: {.panel-tabset}` でタブ切替パネルを作成できます
-- Mermaid 記法でフロー図を描けます
-:::
-
+# データ
 
 ## データの出典
 
 | 項目 | 内容 |
 |------|------|
-| 利用データ | 東京都シェアサイクル事業オープンデータ（※実際の出典に置き換えてください） |
-| 気象データ | 気象庁 過去の気象データ検索（※実際の出典に置き換えてください） |
-| 取得日 | 2025年○月○日 |
+| 賃金カーブ | 厚生労働省「賃金構造基本統計調査（2025年）」：一般労働者（大卒・産業計）と看護師の月額賃金（決まって支給する現金給与額）、年齢階級別 |
+| 賃上げ・基本給 | 日本看護協会「看護職員の賃上げに関する緊急調査」（2026年9月1〜14日実施、10月27日発表） |
+| 民間企業の賃上げ実施率 | 東京商工リサーチ「2026年度賃上げに関するアンケート」 |
+| 取得経路 | JILPT「看護職員の賃上げは他産業に遠く及ばない状況／日本看護協会緊急調査」（2026年11月6日) |
+| 取得日 | 2026年11月10日 |
 | 前処理スクリプト | `src/generate_data.R` |
 
 : データの出典 {#tbl-data-source}
 
 
-## データの準備
+## データの性格と注意点
+
+- **3つの調査は別物である。** 賃金構造基本統計調査は国の統計、日本看護協会の調査は職能団体のWebアンケート、東京商工リサーチは民間企業へのアンケートである。対象・設問・集計の基数が違うため、数値を直接つなげて計算しない。
+- **賃金の定義が異なる。** 賃金カーブの「月額賃金」は決まって支給する現金給与額、基本給の表は日本看護協会調査の基本給額である。両者は比べられない。
+- **年齢階級は3つだけ。** 記事に載っていた25〜29歳、35〜39歳、45〜49歳のみを使う。他の年齢階級は、統計表で確認すれば追加できる。
+
+## データの内容
+
+| ファイル | 内容 | 行数 |
+|------|------|-----:|
+| `wage_curve_2025.csv` | 年齢階級別の月額賃金（一般労働者・看護師） | 3 |
+| `raise_implementation_2026.csv` | 賃上げ実施率（病院・訪問看護事業所・大企業・中小企業） | 4 |
+| `raise_rate_dist_2026.csv` | 賃上げ率の分布（病院・訪問看護事業所） | 12 |
+| `base_pay_2026.csv` | 2026年8月の基本給と前年同月差（就業先別） | 3 |
+
+: データファイル一覧 {#tbl-files}
+
+## データの読み込み
 
 ```{r}
 #| label: setup-data
 #| code-summary: "データ読み込み"
-
-bike_data <- read.csv("data/bike_data.csv")
-bike_data$date <- as.Date(bike_data$date)
-bike_data$wday <- factor(bike_data$wday,
-  levels = c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"))
+wage    <- read.csv("data/wage_curve_2025.csv", fileEncoding = "UTF-8")
+impl    <- read.csv("data/raise_implementation_2026.csv", fileEncoding = "UTF-8")
+dist    <- read.csv("data/raise_rate_dist_2026.csv", fileEncoding = "UTF-8")
+basepay <- read.csv("data/base_pay_2026.csv", fileEncoding = "UTF-8")
 ```
-
-
-## データ概要
-
-本研究では、東京都内のシェアサイクル利用数と気象データを組み合わせた合成データセットを使用する。
-
-| 項目 | 内容 |
-|------|------|
-| 対象期間 | 2024年1月1日 〜 2024年12月31日（365日間） |
-| 時間粒度 | 1時間単位 |
-| レコード数 | 8,760件（365日 × 24時間） |
-| 目的変数 | 1時間あたりの利用数（count） |
-| 説明変数 | 気温、湿度、風速、降雨有無、曜日、時間帯 |
-
-: データセットの概要 {#tbl-data-overview}
-
-### 変数一覧
-
-| 変数名 | 型 | 説明 | 単位 |
-|--------|-------|------|------|
-| `date` | Date | 日付 | - |
-| `hour` | integer | 時間帯（0–23） | 時 |
-| `temperature` | numeric | 気温 | °C |
-| `humidity` | numeric | 相対湿度 | % |
-| `wind_speed` | numeric | 風速 | m/s |
-| `is_rain` | integer | 降雨フラグ（0/1） | - |
-| `count` | integer | 利用数（目的変数） | 台 |
-
-: 変数一覧 {#tbl-variables}
-
-
-## 基本統計量
 
 ```{r}
-#| label: tbl-summary-stats
-#| tbl-cap: "基本統計量"
-#| code-summary: "基本統計量の算出"
+#| label: calc-data
+#| include: false
+fmt <- function(x) format(round(x), big.mark = ",")
 
-vars <- c("temperature", "humidity", "wind_speed", "count")
-stats <- do.call(rbind, lapply(vars, function(v) {
-  x <- bike_data[[v]]
-  data.frame(
-    変数 = v,
-    平均 = round(mean(x), 1),
-    標準偏差 = round(sd(x), 1),
-    最小 = round(min(x), 1),
-    中央値 = round(median(x), 1),
-    最大 = round(max(x), 1)
-  )
-}))
-knitr::kable(stats, row.names = FALSE)
+wage$gap <- wage$nurses - wage$general_workers
+rise_g <- wage$general_workers[3] - wage$general_workers[1]
+rise_n <- wage$nurses[3] - wage$nurses[1]
+
+impl$change <- impl$rate_2026 - impl$rate_2025
+
+dist$band  <- factor(dist$band, levels = unique(dist$band))
+dist$group <- factor(dist$group, levels = unique(dist$group))
+lo <- dist$band %in% c("1%未満", "1〜2%未満")
+hi <- dist$band %in% c("3〜4%未満", "4〜5%未満", "5%以上")
+under2 <- tapply(dist$share_pct[lo], dist$group[lo], sum)
+over3  <- tapply(dist$share_pct[hi], dist$group[hi], sum)
+
+basepay$rate <- basepay$diff_from_prev_year /
+                (basepay$base_pay_aug2026 - basepay$diff_from_prev_year) * 100
 ```
 
+以下、4つのデータを順に示し、それぞれについて、データから読み取れることと、その背景・注意点を考察する。「根拠あり」は資料に記述があるもの、「仮説」は本研究の推測で検証していないものを指す。
 
-## 時系列の可視化
-
-@fig-timeseries は日別の平均利用数の推移を示す。夏季に利用数が増加し、冬季に減少する季節パターンが確認できる。
+### 賃金カーブ（25〜29歳・35〜39歳・45〜49歳）
 
 ```{r}
-#| label: fig-timeseries
-#| fig-cap: "日別平均利用数の推移"
-#| code-summary: "時系列グラフの作成"
-
-daily_avg <- aggregate(count ~ date, data = bike_data, FUN = mean)
-
-plot(daily_avg$date, daily_avg$count, type = "l", col = "#2F5496",
-     xlab = "日付", ylab = "平均利用数（台/時間）", lwd = 1.5)
+#| label: tbl-wage-raw
+#| tbl-cap: "年齢階級別の月額賃金（円）"
+#| code-summary: "賃金カーブの表"
+knitr::kable(
+  data.frame(年齢 = wage$age_group,
+             一般労働者 = wage$general_workers,
+             看護師 = wage$nurses),
+  format.args = list(big.mark = ","))
 ```
 
+**考察**
 
-## 気象データとの関係
+25〜29歳から45〜49歳までの賃金の上昇額は、一般労働者が`r fmt(rise_g)`円、看護師が`r fmt(rise_n)`円で、看護師は一般労働者の約`r sprintf("%.0f", rise_n / rise_g * 100)`%にとどまる。看護師は20代では一般労働者を上回るため、**賃金の出発点は低くなく、年齢とともに差がつく**という形である。
 
-@fig-scatter-temp は気温と利用数の関係を示す散布図である。気温が高いほど利用数が増加する正の相関が認められる。
+- **根拠あり：** 日本看護協会は、横ばいの賃金カーブについて、施設に賃金モデルを提案するなどして対応する考えを示している。経験年数に応じて賃金が上がる仕組みが施設に十分にないことを示唆する。
+- **根拠あり：** 診療報酬では、人件費の予算制約によって賃金水準が抑えられる場合がある。長く勤めるほど人件費が増える職員構成の施設で、その制約が強く働く可能性がある。
+- **仮説：** 20代で高く出るのは、夜勤などの手当が月額に含まれるためかもしれない。統計上の手当の扱いは確認できていない。
+- **注意：** 比較相手は一般労働者（大卒・産業計）で、看護師と学歴や職種の構成が異なる可能性がある。また、年齢階級は3つだけなので、カーブの形（途中で折れ曲がるか、一定に近いか）までは言えない。
+
+### 賃上げ実施率
 
 ```{r}
-#| label: fig-scatter-temp
-#| fig-cap: "気温と利用数の関係"
-#| code-summary: "散布図の作成"
-
-set.seed(42)
-idx <- sample(nrow(bike_data), 2000)
-sample_data <- bike_data[idx, ]
-
-plot(sample_data$temperature, sample_data$count,
-     pch = 16, col = adjustcolor("#2F5496", 0.3), cex = 0.6,
-     xlab = "気温（°C）", ylab = "利用数（台）")
+#| label: tbl-impl-raw
+#| tbl-cap: "2026年度の賃上げ実施率（%）"
+#| code-summary: "賃上げ実施率の表"
+knitr::kable(
+  data.frame(区分 = impl$group, 調査 = impl$source,
+             `2026年度` = impl$rate_2026, `2025年度` = impl$rate_2025,
+             check.names = FALSE))
 ```
 
+**考察**
 
-## 曜日・時間帯パターン
+2026年度の実施率は、病院`r impl$rate_2026[1]`%、訪問看護事業所`r impl$rate_2026[2]`%で、大企業`r impl$rate_2026[3]`%、中小企業`r impl$rate_2026[4]`%より低い。一方、前年度からの上昇幅は、病院が`r sprintf("%.1f", impl$change[1])`ポイント、訪問看護事業所が`r sprintf("%.1f", impl$change[2])`ポイントで、大企業（`r sprintf("%.1f", impl$change[3])`ポイント）や中小企業（`r sprintf("%.1f", impl$change[4])`ポイント）より大きい。
 
-::: {.panel-tabset}
+- **根拠あり：** 賃上げをした病院・訪問看護事業所の賃上げは、診療報酬・介護報酬等の評価や国の「賃上げ支援事業」補助金の受給によるものと整理されている。
+- **仮説：** 看護側の上昇幅が大きいのは、公的な財源措置が加わって実施できる施設が増えたためかもしれない。ただし、民間は水準がすでに高く、上昇の余地が小さいという面もあり、上昇幅の大小だけでは優劣を判断できない。
+- **注意：** 実施率は賃上げの有無を示すだけで、賃上げの大きさは示さない。また、日本看護協会と東京商工リサーチは別の調査で、対象と設問が異なる。
 
-### 時間帯別
+### 賃上げ率の分布
 
 ```{r}
-#| label: fig-hourly-pattern
-#| fig-cap: "時間帯別の平均利用数"
-#| code-summary: "時間帯別集計"
-
-hourly_avg <- aggregate(count ~ hour, data = bike_data, FUN = mean)
-
-barplot(hourly_avg$count, names.arg = hourly_avg$hour,
-        col = "#2F5496", xlab = "時間帯", ylab = "平均利用数（台）",
-        las = 1)
+#| label: tbl-dist-raw
+#| tbl-cap: "賃上げした施設の賃上げ率の分布（%）"
+#| code-summary: "賃上げ率の分布の表"
+tab <- xtabs(share_pct ~ band + group, data = dist)
+knitr::kable(as.data.frame.matrix(tab))
 ```
 
-### 曜日別
+賃上げ率の分布は、病院・訪問看護事業所とも合計がほぼ100%になっている（四捨五入のため、病院は100.1%）。
 
 ```{r}
-#| label: fig-wday-pattern
-#| fig-cap: "曜日別の平均利用数"
-#| code-summary: "曜日別集計"
-
-wday_avg <- aggregate(count ~ wday, data = bike_data, FUN = mean)
-
-barplot(wday_avg$count, names.arg = wday_avg$wday,
-        col = "#4472C4", xlab = "曜日", ylab = "平均利用数（台）",
-        las = 1)
+#| label: check-dist
+#| code-summary: "合計の確認"
+colSums(tab)
 ```
 
-:::
+**考察**
 
+賃上げ率が2%未満の施設は、病院で`r sprintf("%.1f", under2[["病院"]])`%、訪問看護事業所で`r sprintf("%.1f", under2[["訪問看護事業所"]])`%である。一方、3%以上の施設は病院で`r sprintf("%.1f", over3[["病院"]])`%、訪問看護事業所で`r sprintf("%.1f", over3[["訪問看護事業所"]])`%を占める。**賃上げの大きさは施設によって大きくばらついており**、どの階級にも一定の割合の施設がある。
 
-## 前処理パイプライン
+- **根拠あり：** 最も多い階級は、病院・訪問看護事業所とも「1〜2%未満」である。
+- **仮説：** ばらつきの背景には、施設ごとの賃上げ原資の違い（診療報酬の加算の取得状況や、補助金を受けられたかどうか）があるかもしれない。診療報酬が行為ごとの公定価格であり、賃金改善を直接の目的とする仕組みが限られることとも整合的だが、本データでは検証できない。
+- **注意：** この分布は賃上げをした施設に限られる。賃上げをしなかった施設は含まれないため、看護職員全体の賃上げの水準を表すものではない。
+
+### 2026年8月の基本給
+
+```{r}
+#| label: tbl-basepay-raw
+#| tbl-cap: "2026年8月の基本給と前年同月からの増加（日本看護協会調査）"
+#| code-summary: "基本給の表"
+knitr::kable(
+  data.frame(就業先 = basepay$workplace,
+             `基本給（円）` = basepay$base_pay_aug2026,
+             `前年同月差（円）` = basepay$diff_from_prev_year,
+             `増加率（逆算、%）` = round(basepay$rate, 1),
+             check.names = FALSE),
+  format.args = list(big.mark = ","))
+```
+
+**考察**
+
+基本給は、病院が`r fmt(basepay$base_pay_aug2026[1])`円、訪問看護事業所が`r fmt(basepay$base_pay_aug2026[2])`円、介護保険施設・事業所が`r fmt(basepay$base_pay_aug2026[3])`円で、就業先によって差がある。前年同月からの増加率（逆算）も、病院が約`r sprintf("%.1f", basepay$rate[1])`%、訪問看護事業所が約`r sprintf("%.1f", basepay$rate[2])`%、介護保険施設・事業所が約`r sprintf("%.1f", basepay$rate[3])`%と、就業先で異なる。
+
+- **根拠あり：** 訪問看護事業所と介護保険施設・事業所の平均給与月額は、すべての年齢層で病院勤務者を下回り、その差は年齢層が上がるほど拡大する。
+- **仮説：** 就業先によって賃上げ原資の仕組み（診療報酬か介護報酬か、加算の種類）が異なることが、基本給の水準と増え方の差につながっている可能性がある。
+- **注意：** 基本給の増加率は、賃上げ率とは別の概念である。昇給や、職員の入れ替え・年齢構成の変化の影響も含む。また、この基本給は賃金構造基本統計調査の月額賃金とは定義が異なり、賃金カーブの表とは比べられない。前年同月差が同じ人の比較かどうかも確認できていない。
+
+## データ整理の流れ
 
 ```{mermaid}
 %%| label: fig-preprocess
-%%| fig-cap: "データ前処理パイプライン"
+%%| fig-cap: "データ整理の流れ"
 flowchart LR
-    A[元データ取得] --> B[欠損値処理]
-    B --> C[特徴量生成]
-    C --> D[時間帯・曜日<br>ダミー変数化]
-    D --> E[訓練/テスト分割]
-    E --> F[モデル入力]
+    A[JILPT記事から<br>数値を転記] --> B[src/generate_data.R<br>でCSV化]
+    B --> C[合計などの<br>整合性確認]
+    C --> D[一次資料と<br>照合]
+    D --> E[分析用データ<br>完成]
 ```
+
+::: {.callout-note title="次の作業"}
+図の最後の「一次資料と照合」は、まだ行っていない。照合したら、`03_データ.qmd` の取得日と出典欄を更新する。
+:::
